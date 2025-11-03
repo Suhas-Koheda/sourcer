@@ -9,7 +9,7 @@ from wiki_name import get_wikipedia_page_name_from_topic
 app = FastAPI()
 
 # Mount static files directory
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Set up templates
 templates = Jinja2Templates(directory="templates")
@@ -41,16 +41,27 @@ def get_dates_dict(topic: str, language: str = 'en'):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@app.get("/extract-dates-multiple/")
-def get_dates_multiple_topics(topics: List[str], language: str = 'en'):
+from pydantic import BaseModel
+
+class TopicsRequest(BaseModel):
+    topics: List[str]
+    language: str = 'en'
+
+@app.post("/extract-dates-multiple/")
+def extract_dates_multiple_topics(request: TopicsRequest):
     """
-    GET function to extract dates from multiple topics
+    POST function to extract dates from multiple topics
+    Request body should contain:
+    {
+        "topics": ["topic1", "topic2", ...],
+        "language": "en"  # optional, defaults to 'en'
+    }
     """
     try:
         results = []
         
-        for topic in topics:
-            result = extract_dates_from_topic(topic, language)
+        for topic in request.topics:
+            result = extract_dates_from_topic(topic, request.language)
             results.append(result)
             
             # Small delay to be respectful to APIs

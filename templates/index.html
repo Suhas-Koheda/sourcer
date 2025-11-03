@@ -47,7 +47,11 @@
             <div class="card-body">
                 <form id="multipleTopicsForm">
                     <div class="mb-3">
-                        <textarea class="form-control" id="multipleTopics" rows="3" placeholder="Enter topics (one per line)" required></textarea>
+                        <textarea class="form-control" id="multipleTopics" rows="3" 
+                            placeholder="Enter each topic on a new line, for example:
+World War II
+Indian Independence Movement
+French Revolution" required></textarea>
                     </div>
                     <div class="mb-3">
                         <select class="form-control" id="multipleLanguage">
@@ -143,12 +147,21 @@
             e.preventDefault();
             toggleLoading(true);
             
-            const topics = document.getElementById('multipleTopics').value.split('\n').filter(t => t.trim());
+            const rawTopics = document.getElementById('multipleTopics').value;
+            const topics = rawTopics.split('\n')
+                                  .map(t => t.trim())
+                                  .filter(t => t.length > 0);
             const language = document.getElementById('multipleLanguage').value;
+            
+            if (topics.length === 0) {
+                showError('Please enter at least one topic');
+                toggleLoading(false);
+                return;
+            }
             
             try {
                 const response = await fetch('/extract-dates-multiple/', {
-                    method: 'GET',
+                    method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
@@ -167,20 +180,28 @@
                 `;
 
                 data.results.forEach((result, index) => {
+                    const hasError = result.error !== undefined;
+                    const datesCount = hasError ? '0' : result.dates_found;
+                    
                     resultsHtml += `
                         <div class="accordion-item">
                             <h2 class="accordion-header">
                                 <button class="accordion-button ${index !== 0 ? 'collapsed' : ''}" type="button" 
                                         data-bs-toggle="collapse" data-bs-target="#collapse${index}">
-                                    ${result.topic} (${result.dates_found} dates)
+                                    ${result.topic} (${datesCount} dates)
                                 </button>
                             </h2>
                             <div id="collapse${index}" class="accordion-collapse collapse ${index === 0 ? 'show' : ''}"
                                  data-bs-parent="#topicsAccordion">
                                 <div class="accordion-body">
-                                    <p><strong>Wikipedia Page:</strong> ${result.wikipedia_page}</p>
-                                    <p><strong>Text Length:</strong> ${result.text_length} characters</p>
-                                    ${formatDates(result.dates)}
+                                    ${hasError ? 
+                                        `<div class="alert alert-warning">
+                                            ${result.error}
+                                        </div>` :
+                                        `<p><strong>Wikipedia Page:</strong> ${result.wikipedia_page}</p>
+                                         <p><strong>Text Length:</strong> ${result.text_length} characters</p>
+                                         ${formatDates(result.dates)}`
+                                    }
                                 </div>
                             </div>
                         </div>
