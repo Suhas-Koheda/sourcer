@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wikipedia Date Extractor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .container { max-width: 900px; }
+        .date-card { margin-bottom: 1rem; }
+        #loadingSpinner { display: none; }
+        .results-section { margin-top: 2rem; }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="text-center mb-4">Wikipedia Date Extractor</h1>
+        
+        <!-- Single Topic Search -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Search Single Topic</h5>
+            </div>
+            <div class="card-body">
+                <form id="singleTopicForm">
+                    <div class="mb-3">
+                        <input type="text" class="form-control" id="singleTopic" placeholder="Enter a topic (e.g., World War II)" required>
+                    </div>
+                    <div class="mb-3">
+                        <select class="form-control" id="singleLanguage">
+                            <option value="en">English</option>
+                            <option value="es">Spanish</option>
+                            <option value="fr">French</option>
+                            <option value="de">German</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Search</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Multiple Topics Search -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Search Multiple Topics</h5>
+            </div>
+            <div class="card-body">
+                <form id="multipleTopicsForm">
+                    <div class="mb-3">
+                        <textarea class="form-control" id="multipleTopics" rows="3" placeholder="Enter topics (one per line)" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <select class="form-control" id="multipleLanguage">
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Search Multiple</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div id="loadingSpinner" class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results" class="results-section"></div>
+    </div>
+
+    <script>
+        // Helper function to show/hide loading spinner
+        const toggleLoading = (show) => {
+            document.getElementById('loadingSpinner').style.display = show ? 'block' : 'none';
+        };
+
+        // Helper function to display error messages
+        const showError = (message) => {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `
+                <div class="alert alert-danger" role="alert">
+                    ${message}
+                </div>
+            `;
+        };
+
+        // Helper function to format dates and their contexts
+        const formatDates = (dates) => {
+            let html = '<div class="list-group">';
+            for (const [date, context] of Object.entries(dates)) {
+                html += `
+                    <div class="list-group-item">
+                        <h6 class="mb-1">${date}</h6>
+                        <p class="mb-1">${context}</p>
+                    </div>
+                `;
+            }
+            html += '</div>';
+            return html;
+        };
+
+        // Handle single topic search
+        document.getElementById('singleTopicForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            toggleLoading(true);
+            
+            const topic = document.getElementById('singleTopic').value;
+            const language = document.getElementById('singleLanguage').value;
+            
+            try {
+                const response = await fetch(`/extract-dates/${encodeURIComponent(topic)}?language=${language}`);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to fetch data');
+                }
+
+                document.getElementById('results').innerHTML = `
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Results for "${data.topic}"</h5>
+                        </div>
+                        <div class="card-body">
+                            <p><strong>Wikipedia Page:</strong> ${data.wikipedia_page}</p>
+                            <p><strong>Text Length:</strong> ${data.text_length} characters</p>
+                            <p><strong>Dates Found:</strong> ${data.dates_found}</p>
+                            <h6 class="mt-3">Dates and Context:</h6>
+                            ${formatDates(data.dates)}
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                toggleLoading(false);
+            }
+        });
+
+        // Handle multiple topics search
+        document.getElementById('multipleTopicsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            toggleLoading(true);
+            
+            const topics = document.getElementById('multipleTopics').value.split('\n').filter(t => t.trim());
+            const language = document.getElementById('multipleLanguage').value;
+            
+            try {
+                const response = await fetch('/extract-dates-multiple/', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ topics, language })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to fetch data');
+                }
+
+                let resultsHtml = `
+                    <h4>Results for ${data.total_topics} Topics</h4>
+                    <div class="accordion" id="topicsAccordion">
+                `;
+
+                data.results.forEach((result, index) => {
+                    resultsHtml += `
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button ${index !== 0 ? 'collapsed' : ''}" type="button" 
+                                        data-bs-toggle="collapse" data-bs-target="#collapse${index}">
+                                    ${result.topic} (${result.dates_found} dates)
+                                </button>
+                            </h2>
+                            <div id="collapse${index}" class="accordion-collapse collapse ${index === 0 ? 'show' : ''}"
+                                 data-bs-parent="#topicsAccordion">
+                                <div class="accordion-body">
+                                    <p><strong>Wikipedia Page:</strong> ${result.wikipedia_page}</p>
+                                    <p><strong>Text Length:</strong> ${result.text_length} characters</p>
+                                    ${formatDates(result.dates)}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                resultsHtml += '</div>';
+                document.getElementById('results').innerHTML = resultsHtml;
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                toggleLoading(false);
+            }
+        });
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
