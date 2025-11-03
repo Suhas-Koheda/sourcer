@@ -1,8 +1,6 @@
 import re
 from typing import Dict, List, Tuple, Union
-
-import wikipediaapi
-
+import requests
 from wiki_name import get_wikipedia_page_name_from_topic
 
 
@@ -317,7 +315,7 @@ def extract_dates(text: str) -> List[Dict[str, str]]:
 
 def get_complete_page_text(page_title: str, language: str = 'en', user_agent: str = 'haas (sharmasuhas450@gmail.com)') -> str:
     """
-    Get the complete text of a Wikipedia page including summary and all sections.
+    Get the complete text of a Wikipedia page including summary and all sections using wikitext.
     
     Args:
         page_title (str): The title of the Wikipedia page
@@ -325,20 +323,172 @@ def get_complete_page_text(page_title: str, language: str = 'en', user_agent: st
         user_agent (str): User agent string for API identification
     
     Returns:
-        str: Complete text of the Wikipedia page
+        str: Complete text of the Wikipedia page without headers/footers/references
     """
-    # Initialize Wikipedia API
-    wiki_wiki = wikipediaapi.Wikipedia(
-        user_agent=user_agent,
-        language=language,
-        extract_format=wikipediaapi.ExtractFormat.WIKI
-    )
+    headers = {
+        'User-Agent': user_agent
+    }
     
-    # Get the page
-    page = wiki_wiki.page(page_title)
+    # Get the page content in wikitext format
+    url = f"https://{language}.wikipedia.org/w/api.php"
     
-    if not page.exists():
+    params = {
+        'action': 'query',
+        'titles': page_title,
+        'prop': 'revisions',
+        'rvprop': 'content',
+        'format': 'json'
+    }
+    
+    response = requests.get(url, params=params, headers=headers)
+    
+    if response.status_code != 200:
+        raise ValueError(f"Error fetching page: {response.status_code}")
+    
+    data = response.json()
+    pages = data.get('query', {}).get('pages', {})
+    
+    # Get the first page
+    page_id = next(iter(pages))
+    page_data = pages[page_id]
+    
+    if page_id == '-1' or 'revisions' not in page_data:
         raise ValueError(f"Page '{page_title}' does not exist in {language} Wikipedia")
     
-    # Return the complete text (includes summary + all sections)
-    return page.text
+    # Get the wikitext content
+    wikitext = page_data['revisions'][0]['*']
+    
+    # Clean the wikitext to remove markup and get clean text
+    clean_text = clean_wikitext(wikitext)
+    
+    return clean_text
+
+def clean_wikitext(wikitext: str) -> str:
+    """
+    Clean wikitext by removing markup and keeping clean text with proper sentence boundaries.
+    """
+    # Remove HTML comments
+    text = re.sub(r'<!--.*?-->', '', wikitext, flags=re.DOTALL)
+    
+    # Remove references ({{cite ...}}, {{sfn ...}}, etc.)
+    text = re.sub(r'{{[^}]*}}', '', text)
+    
+    # Remove templates like {{lang|...}}
+    text = re.sub(r'{{[^}]*?}}', '', text)
+    
+    # Remove file/image links [[File:...]]
+    text = re.sub(r'\[\[File:[^\]]*\]\]', '', text)
+    text = re.sub(r'\[\[Image:[^\]]*\]\]', '', text)
+    
+    # Remove external links [http://...]
+    text = re.sub(r'\[https?://[^\s\]]*\]', '', text)
+    
+    # Convert internal links [[link|display]] to just "display" or "link"
+    text = re.sub(r'\[\[[^\]|]*\|([^\]]*)\]\]', r'\1', text)  # [[link|display]] -> display
+    text = re.sub(r'\[\[([^\]|]*)\]\]', r'\1', text)  # [[link]] -> link
+    
+    # Remove bold/italic markup '''text''' -> text
+    text = re.sub(r"'''''([^']*)'''''", r'\1', text)  # '''''bold italic'''''
+    text = re.sub(r"'''([^']*)'''", r'\1', text)  # '''bold'''
+    text = re.sub(r"''([^']*)''", r'\1', text)  # ''italic''
+    
+    # Remove section headers (== Header ==)
+    text = re.sub(r'=+\s*(.*?)\s*=+', r'\1. ', text)  # Convert headers to text with period
+    
+    # Remove remaining markup characters
+    text = re.sub(r'[{}]', '', text)
+    
+    # Clean up whitespace
+    text = re.sub(r'\n+', '\n', text)
+    text = re.sub(r' +', ' ', text)
+    
+    # Remove unwanted sections
+    lines = text.split('\n')
+    filtered_lines = []
+    skip_section = False
+    
+    unwanted_sections = [
+        'references', 'external links', 'see also', 'notes', 
+        'footnotes', 'bibliography', 'further reading', 'sources'
+    ]
+    
+    for line in lines:
+        line_lower = line.lower()
+        
+        # Check if this line starts an unwanted section
+        if any(section in line_lower for section in unwanted_sections):
+            skip_section = True
+            continue
+        
+        # Reset skip_section when we reach a new major section (empty line or new context)
+        if skip_section and (line.strip() == '' or re.match(r'^[A-Z]', line.strip())):
+            skip_section = False
+            continue
+            
+        if not skip_section and line.strip():
+            filtered_lines.append(line.strip())
+    
+    return '\n'.join(filtered_lines)
+
+def extract_context_paragraph(text: str, start_pos: int, end_pos: int) -> str:
+    """
+    Extract a contextual paragraph when sentence boundaries are not clear.
+    """
+    # Expand search window to get more context
+    context_window = 300  # characters to look before and after
+    
+    # Calculate safe boundaries
+    context_start = max(0, start_pos - context_window)
+    context_end = min(len(text), end_pos + context_window)
+    
+    # Extract context
+    context = text[context_start:context_end].strip()
+    context = re.sub(r'\s+', ' ', context)
+    
+    return context
+
+
+    """
+    Search using Wikipedia API directly
+    """
+    url = "https://en.wikipedia.org/w/api.php"
+    
+    headers = {
+        'User-Agent': user_agent
+    }
+    
+    params = {
+        'action': 'query',
+        'list': 'search',
+        'srsearch': topic,
+        'format': 'json'
+    }
+    
+    response = requests.get(url, params=params, headers=headers)
+    
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Error: {response.status_code} - {response.text}")
+        return None
+    """
+    Convert a topic name to a valid Wikipedia page title using Wikipedia search API.
+    
+    Args:
+        topic (str): The topic name (e.g., "python programming", "world war 2")
+        user_agent (str): User agent string for API identification
+    
+    Returns:
+        str: Valid Wikipedia page title
+    """
+    search_results = wikipedia_search(topic, user_agent)
+    
+    if not search_results:
+        raise ValueError(f"No search results found for topic: {topic}")
+    
+    page_name = extract_wikipedia_page_name(search_results)
+    
+    if not page_name:
+        raise ValueError(f"No Wikipedia page found for topic: {topic}")
+    
+    return page_name
