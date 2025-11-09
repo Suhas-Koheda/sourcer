@@ -21,20 +21,12 @@ git clone https://github.com/suhas-koheda/sourcer.git
 cd sourcer
 ```
 
-2. Create and activate a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or
-venv\Scripts\activate  # Windows
-```
-
-3. Install dependencies:
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Set up environment variables:
+3. Set up environment variables:
 ```bash
 export GOOGLE_API_KEY="your_google_api_key"  # Required for Gemini AI integration
 ```
@@ -43,10 +35,13 @@ export GOOGLE_API_KEY="your_google_api_key"  # Required for Gemini AI integratio
 
 1. Start the server:
 ```bash
-uvicorn main:app --reload
+python main.py
 ```
 
-2. Open your browser and navigate to `http://localhost:8000`
+2. Open your browser and navigate to:
+   - Web Interface: `http://localhost:8000`
+   - API Documentation: `http://localhost:8000/docs` (Swagger UI)
+   - Alternative API Documentation: `http://localhost:8000/redoc` (ReDoc UI)
 
 3. Use the application in two ways:
    - **Single Topic Search**: Enter a single Wikipedia topic
