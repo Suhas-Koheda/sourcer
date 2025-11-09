@@ -4,6 +4,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 import wikipediaapi
 from dates import extract_dates_from_topic
+from llm import process_gemini
 from wiki_name import get_wikipedia_page_name_from_topic
 
 app = FastAPI()
@@ -17,7 +18,6 @@ templates = Jinja2Templates(directory="templates")
 @app.get("/")
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
-    return {"Hello": "World"}
 
 @app.get("/extract-dates/{topic}")
 def get_dates_dict(topic: str, language: str = 'en'):
@@ -26,7 +26,7 @@ def get_dates_dict(topic: str, language: str = 'en'):
     Returns: Dictionary with dates as keys and context as values
     """
     try:
-        result = extract_dates_from_topic(topic, language)
+        result = process_gemini(topic, language)
         
         if 'error' in result:
             raise HTTPException(status_code=404, detail=result['error'])
@@ -36,7 +36,8 @@ def get_dates_dict(topic: str, language: str = 'en'):
             "wikipedia_page": result['wikipedia_page'],
             "text_length": result['text_length'],
             "dates_found": result['dates_found'],
-            "dates": result['dates']  # This is the dates dictionary (date -> context)
+            "dates": result['dates'],
+            "parsed_data":result['parsed_data']
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
@@ -61,7 +62,13 @@ def extract_dates_multiple_topics(request: TopicsRequest):
         results = []
         
         for topic in request.topics:
-            result = extract_dates_from_topic(topic, request.language)
+            # Use the Gemini-based processor so we get the summarized/parsed events
+            # (this returns the same fields as extract_dates_from_topic plus `parsed_data`)
+            try:
+                result = process_gemini(topic, request.language)
+            except Exception:
+                # Fall back to the original extractor if Gemini processing fails for a topic
+                result = extract_dates_from_topic(topic, request.language)
             results.append(result)
             
             # Small delay to be respectful to APIs

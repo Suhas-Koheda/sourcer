@@ -4,7 +4,7 @@ import requests
 from wiki_name import get_wikipedia_page_name_from_topic
 
 
-def extract_dates_from_topic(topic: str, language: str = 'en', user_agent: str = 'MyProjectName (merlin@example.com)') -> Dict[str, Union[str, Dict[str, str]]]:
+def extract_dates_from_topic(topic: str, language: str = 'en', user_agent: str = 'Haas (sharmasuhas450@gmail.com)') -> Dict[str, Union[str, Dict[str, str]]]:
     """
     MAIN FUNCTION: Extract ALL dates from a Wikipedia page using raw content.
     """
@@ -41,81 +41,6 @@ def extract_dates_from_topic(topic: str, language: str = 'en', user_agent: str =
             'error': str(e),
             'dates': {}
         }
-
-
-def extract_all_dates_aggressive(text: str) -> Dict[str, str]:
-    """
-    Extract ALL possible dates using aggressive pattern matching on raw text.
-    """
-    if not text:
-        return {}
-    
-    # SUPER AGGRESSIVE date patterns - catch everything
-    date_patterns = [
-        # Years: 1999, 2000, 2023, etc. (any 4-digit number 1000-2999)
-        r'\b(1[0-9]{3}|2[0-9]{3})\b',
-        
-        # Years in parentheses/brackets: (1999), [2000], (c. 1999)
-        r'[\[(](c\.?\s*)?(1[0-9]{3}|2[0-9]{3})[\])]',
-        
-        # Full dates: January 15, 2023 or 15 January 2023
-        r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s*(?:1[0-9]{3}|2[0-9]{3})\b',
-        r'\b\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:1[0-9]{3}|2[0-9]{3})\b',
-        
-        # ISO dates: 2023-01-15
-        r'\b(?:1[0-9]{3}|2[0-9]{3})-\d{2}-\d{2}\b',
-        
-        # Slash dates: 01/15/2023, 15/01/2023
-        r'\b\d{1,2}/\d{1,2}/(?:1[0-9]{3}|2[0-9]{3})\b',
-        
-        # Decades: 1990s, 2000s
-        r'\b(?:19|20)\d{2}s\b',
-        
-        # BC/AD dates: 1999 BC, 200 AD
-        r'\b(?:1[0-9]{3}|2[0-9]{3})\s*(?:BC|BCE|AD|CE)\b',
-        r'\b\d+\s*(?:BC|BCE|AD|CE)\b',
-        
-        # Circa dates: c. 1999, c.2000
-        r'\bc\.?\s*(?:1[0-9]{3}|2[0-9]{3})\b',
-        
-        # Date ranges: 1999-2000, 1999–2000, 1999–present
-        r'\b(?:1[0-9]{3}|2[0-9]{3})[-–](?:1[0-9]{3}|2[0-9]{3}|present)\b',
-        
-        # Years with punctuation: 1999., 2000;, 2023:
-        r'\b(?:1[0-9]{3}|2[0-9]{3})[.,;:]\b',
-    ]
-    
-    dates_dict = {}
-    all_matches = []
-    
-    # Collect ALL matches from all patterns
-    for pattern in date_patterns:
-        matches = list(re.finditer(pattern, text, re.IGNORECASE))
-        all_matches.extend(matches)
-    
-    print(f"  - Found {len(all_matches)} raw date matches")
-    
-    # Process each match
-    for i, match in enumerate(all_matches):
-        original_date = match.group()
-        
-        # Normalize the date
-        normalized_date = normalize_date_aggressive(original_date)
-        
-        # Get extensive context
-        context = extract_extensive_context(text, match.start(), match.end())
-        
-        # Only add if we have meaningful context
-        if context and len(context.strip()) > 10:
-            # Use the most extensive context for each normalized date
-            if normalized_date not in dates_dict or len(context) > len(dates_dict[normalized_date]):
-                dates_dict[normalized_date] = context
-                
-                # Debug output for first few dates
-                if i < 10:
-                    print(f"    - {normalized_date}: {context[:100]}...")
-    
-    return sort_dates_chronologically(dates_dict)
 
 
 def normalize_date_aggressive(date_str: str) -> str:
@@ -195,41 +120,143 @@ def normalize_date_aggressive(date_str: str) -> str:
     # Default: just the year
     return f"{circa}{year}"
 
-
-def extract_extensive_context(text: str, start_pos: int, end_pos: int, max_length: int = 400) -> str:
+def extract_extensive_context(text: str, start_pos: int, end_pos: int, max_length: int = 600) -> str:
     """
-    Extract extensive context around a date match.
-    Goes much further to capture complete paragraphs.
+    Extract context by capturing complete paragraphs around the date.
     """
-    # Look for paragraph boundaries or substantial context
-    context_start = max(0, start_pos - 300)
-    context_end = min(len(text), end_pos + 300)
-    
-    # Try to expand to natural boundaries
-    for i in range(start_pos, max(0, start_pos - 500), -1):
-        if i == 0 or (i > 0 and text[i-1] in '.!?\n' and i < start_pos - 100):
-            context_start = i
+    # Find paragraph start
+    paragraph_start = start_pos
+    for i in range(start_pos, max(0, start_pos - 800), -1):
+        if i <= 2 or (i > 2 and text[i-2:i] == '\n\n'):
+            paragraph_start = i
+            break
+        # Also look for bullet points or section markers
+        if i > 1 and text[i-1] in ('•', '-', '*') and text[i] == ' ':
+            paragraph_start = i - 1
             break
     
-    for i in range(end_pos, min(len(text), end_pos + 500)):
-        if i == len(text) - 1 or (i < len(text) - 1 and text[i] in '.!?\n' and i > end_pos + 100):
-            context_end = i + 1
+    # Find paragraph end
+    paragraph_end = end_pos
+    for i in range(end_pos, min(len(text), end_pos + 800)):
+        if i >= len(text) - 2 or (i < len(text) - 2 and text[i:i+2] == '\n\n'):
+            paragraph_end = i
             break
+        # Stop at next bullet point or major section
+        if i < len(text) - 1 and text[i] in ('\n', '.', '!', '?') and i > end_pos + 100:
+            next_chars = text[i+1:i+3]
+            if next_chars and next_chars[0] in ('•', '-', '*', '\n'):
+                paragraph_end = i + 1
+                break
     
-    context = text[context_start:context_end].strip()
+    context = text[paragraph_start:paragraph_end].strip()
     
-    # If we don't have enough context, expand further
-    if len(context) < 100:
-        context_start = max(0, start_pos - 500)
-        context_end = min(len(text), end_pos + 500)
-        context = text[context_start:context_end].strip()
+    # If we don't have enough content, expand to adjacent paragraphs
+    if len(context) < 200:
+        # Look for one more paragraph before
+        extra_start = paragraph_start
+        for i in range(paragraph_start, max(0, paragraph_start - 400), -1):
+            if i > 2 and text[i-2:i] == '\n\n':
+                extra_start = i
+                break
+        
+        # Look for one more paragraph after
+        extra_end = paragraph_end
+        for i in range(paragraph_end, min(len(text), paragraph_end + 400)):
+            if i < len(text) - 2 and text[i:i+2] == '\n\n':
+                extra_end = i
+                break
+        
+        context = text[extra_start:extra_end].strip()
     
-    # Clean up but preserve content
+    # Clean up
     context = re.sub(r'\s+', ' ', context)
-    context = re.sub(r'\n+', ' ', context)
+    context = re.sub(r'\n+', ' \n', context)
     
-    return context[:max_length]
-
+    return context.strip()[:max_length]
+def extract_all_dates_aggressive(text: str) -> Dict[str, str]:
+    """
+    Extract ALL possible dates using aggressive pattern matching on raw text.
+    """
+    if not text:
+        return {}
+    
+    date_patterns = [
+        # Years: 1999, 2000, 2023, etc. (any 4-digit number 1000-2999)
+        r'\b(1[0-9]{3}|2[0-9]{3})\b',
+        
+        # Years in parentheses/brackets: (1999), [2000], (c. 1999)
+        r'[\[(](c\.?\s*)?(1[0-9]{3}|2[0-9]{3})[\])]',
+        
+        # Full dates: January 15, 2023 or 15 January 2023
+        r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s*(?:1[0-9]{3}|2[0-9]{3})\b',
+        r'\b\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:1[0-9]{3}|2[0-9]{3})\b',
+        
+        # ISO dates: 2023-01-15
+        r'\b(?:1[0-9]{3}|2[0-9]{3})-\d{2}-\d{2}\b',
+        
+        # Slash dates: 01/15/2023, 15/01/2023
+        r'\b\d{1,2}/\d{1,2}/(?:1[0-9]{3}|2[0-9]{3})\b',
+        
+        # Decades: 1990s, 2000s
+        r'\b(?:19|20)\d{2}s\b',
+        
+        # BC/AD dates: 1999 BC, 200 AD
+        r'\b(?:1[0-9]{3}|2[0-9]{3})\s*(?:BC|BCE|AD|CE)\b',
+        r'\b\d+\s*(?:BC|BCE|AD|CE)\b',
+        
+        # Circa dates: c. 1999, c.2000
+        r'\bc\.?\s*(?:1[0-9]{3}|2[0-9]{3})\b',
+        
+        # Date ranges: 1999-2000, 1999–2000, 1999–present
+        r'\b(?:1[0-9]{3}|2[0-9]{3})[-–](?:1[0-9]{3}|2[0-9]{3}|present)\b',
+        
+        # Years with punctuation: 1999., 2000;, 2023:
+        r'\b(?:1[0-9]{3}|2[0-9]{3})[.,;:]\b',
+    ]
+    
+    
+    dates_dict = {}
+    processed_regions = []  # Track processed regions to avoid overlaps
+    
+    # Collect ALL matches from all patterns
+    all_matches = {}
+    for pattern in date_patterns:
+        matches = list(re.finditer(pattern, text, re.IGNORECASE))
+        for match in matches:
+            if match.start() not in all_matches:
+                all_matches[match.start()] = match
+    
+    print(f"  - Found {len(all_matches)} raw date matches")
+    
+    # Process matches in order
+    for i, (pos, match) in enumerate(sorted(all_matches.items())):
+        # Check if this position overlaps with already processed regions
+        overlap = False
+        for (start, end) in processed_regions:
+            if pos >= start and pos <= end:
+                overlap = True
+                break
+        
+        if overlap:
+            continue
+            
+        original_date = match.group()
+        normalized_date = normalize_date_aggressive(original_date)
+        
+        # Use smarter context extraction
+        context = extract_extensive_context(text, match.start(), match.end())
+        
+        if context and len(context.strip()) > 10:
+            # Only add if we don't have this normalized date yet
+            if normalized_date not in dates_dict:
+                dates_dict[normalized_date] = context
+                # Mark this region as processed
+                processed_regions.append((match.start() - 100, match.end() + 100))
+                
+                if i < 10:
+                    print(f"    - {normalized_date}: {context[:100]}...")
+    
+    return sort_dates_chronologically(dates_dict)
 
 def get_raw_page_content(page_title: str, language: str = 'en', user_agent: str = 'haas (sharmasuhas450@gmail.com)') -> str:
     """

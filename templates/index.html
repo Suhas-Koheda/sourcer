@@ -10,6 +10,20 @@
         .date-card { margin-bottom: 1rem; }
         #loadingSpinner { display: none; }
         .results-section { margin-top: 2rem; }
+        .view-content .summary-view, .view-content .detail-view {
+            transition: display 0.3s ease;
+        }
+        .list-group-item {
+            border-left: 4px solid #007bff;
+            margin-bottom: 8px;
+        }
+        .summary-stats {
+            border-left: 4px solid;
+            margin-bottom: 1rem;
+        }
+        .summary-stats.good { border-color: #28a745; }
+        .summary-stats.warning { border-color: #ffc107; }
+        .summary-stats.poor { border-color: #dc3545; }
     </style>
 </head>
 <body>
@@ -74,7 +88,7 @@ French Revolution" required></textarea>
         <div id="results" class="results-section"></div>
     </div>
 
-    <script>
+       <script>
         // Helper function to show/hide loading spinner
         const toggleLoading = (show) => {
             document.getElementById('loadingSpinner').style.display = show ? 'block' : 'none';
@@ -92,15 +106,90 @@ French Revolution" required></textarea>
 
         // Helper function to format dates and their contexts
         const formatDates = (dates) => {
+            if (!dates || typeof dates !== 'object') {
+                return '<div class="alert alert-warning">No date information available</div>';
+            }
+
+            const entries = Object.entries(dates);
+            if (entries.length === 0) {
+                return '<div class="alert alert-info">No dates found in the content</div>';
+            }
+
             let html = '<div class="list-group">';
-            for (const [date, context] of Object.entries(dates)) {
+            for (const [date, context] of entries) {
                 html += `
                     <div class="list-group-item">
-                        <h6 class="mb-1">${date}</h6>
-                        <p class="mb-1">${context}</p>
+                        <h6 class="mb-1">${date || 'Unknown Date'}</h6>
+                        <p class="mb-1">${context || 'No context available'}</p>
                     </div>
                 `;
             }
+            html += '</div>';
+            return html;
+        };
+
+        // Helper to show summary statistics
+        const formatSummaryStats = (parsed, totalDates) => {
+            // Ensure we have valid numbers
+            const total = parseInt(totalDates) || 0;
+            const summarizedCount = Array.isArray(parsed) ? parsed.length : 0;
+            const coverage = total > 0 ? Math.round((summarizedCount / total) * 100) : 0;
+            
+            let statsClass = 'good';
+            if (total === 0) {
+                statsClass = 'warning';
+            } else if (coverage < 50) {
+                statsClass = 'poor';
+            } else if (coverage < 90) {
+                statsClass = 'warning';
+            }
+            
+            return `
+                <div class="summary-stats ${statsClass} p-3">
+                    <h6 class="mb-3">Timeline Coverage</h6>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <h3 class="mb-0">${total}</h3>
+                                <small>Total Dates</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <h3 class="mb-0">${summarizedCount}</h3>
+                                <small>Summarized</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <h3 class="mb-0">${coverage}%</h3>
+                                <small>Coverage ${coverage >= 90 ? '✅' : coverage >= 50 ? '⚠️' : '❗'}</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+
+        // Helper to format parsed/summarized data from Gemini (array of {date, summary})
+        const formatParsedData = (parsed) => {
+            if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
+                return '<div class="alert alert-warning">No summarized events available</div>';
+            }
+            
+            let html = '<div class="list-group">';
+            parsed.forEach(ev => {
+                const date = ev.date || '';
+                const summary = ev.summary || ev.description || '';
+                html += `
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h6 class="mb-1">${date}</h6>
+                        </div>
+                        <p class="mb-1">${summary}</p>
+                    </div>
+                `;
+            });
             html += '</div>';
             return html;
         };
@@ -130,11 +219,53 @@ French Revolution" required></textarea>
                             <p><strong>Wikipedia Page:</strong> ${data.wikipedia_page}</p>
                             <p><strong>Text Length:</strong> ${data.text_length} characters</p>
                             <p><strong>Dates Found:</strong> ${data.dates_found}</p>
-                            <h6 class="mt-3">Dates and Context:</h6>
-                            ${formatDates(data.dates)}
+                            
+                            <!-- View Toggle -->
+                            <div class="mb-3">
+                                <div class="btn-group" role="group" aria-label="View Toggle">
+                                    <input type="radio" class="btn-check" name="viewToggle${data.topic}" id="summaryView${data.topic}" autocomplete="off" checked>
+                                    <label class="btn btn-outline-primary" for="summaryView${data.topic}">Summarized View</label>
+                                    
+                                    <input type="radio" class="btn-check" name="viewToggle${data.topic}" id="detailView${data.topic}" autocomplete="off">
+                                    <label class="btn btn-outline-primary" for="detailView${data.topic}">Detailed View</label>
+                                </div>
+                            </div>
+                            
+                            <!-- Summary Statistics -->
+                            ${formatSummaryStats(data.parsed_data, data.dates_found)}
+                            
+                            <!-- Content Views -->
+                            <div class="view-content">
+                                <div class="summary-view">
+                                    <h6 class="mt-3">Summarized Timeline:</h6>
+                                    ${formatParsedData(data.parsed_data)}
+                                </div>
+                                <div class="detail-view" style="display:none;">
+                                    <h6 class="mt-3">Detailed Timeline:</h6>
+                                    ${formatDates(data.dates)}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 `;
+
+                // Add view toggle functionality after the HTML is rendered
+                const summaryRadio = document.getElementById(`summaryView${data.topic}`);
+                const detailRadio = document.getElementById(`detailView${data.topic}`);
+                
+                if (summaryRadio && detailRadio) {
+                    summaryRadio.addEventListener('change', function() {
+                        const cardBody = this.closest('.card-body');
+                        cardBody.querySelector('.summary-view').style.display = 'block';
+                        cardBody.querySelector('.detail-view').style.display = 'none';
+                    });
+                    
+                    detailRadio.addEventListener('change', function() {
+                        const cardBody = this.closest('.card-body');
+                        cardBody.querySelector('.summary-view').style.display = 'none';
+                        cardBody.querySelector('.detail-view').style.display = 'block';
+                    });
+                }
             } catch (error) {
                 showError(error.message);
             } finally {
@@ -143,7 +274,7 @@ French Revolution" required></textarea>
         });
 
         // Handle multiple topics search
-        document.getElementById('multipleTopicsForm').addEventListener('submit', async (e) => {
+        document.getElementById('multipleTopicsForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             toggleLoading(true);
             
@@ -174,42 +305,96 @@ French Revolution" required></textarea>
                     throw new Error(data.detail || 'Failed to fetch data');
                 }
 
-                let resultsHtml = `
-                    <h4>Results for ${data.total_topics} Topics</h4>
-                    <div class="accordion" id="topicsAccordion">
+                // Create results container
+                const resultsDiv = document.getElementById('results');
+                resultsDiv.innerHTML = `
+                    <div class="results-container">
+                        <h4 class="mb-4">Results for ${data.total_topics} Topics</h4>
+                        <div class="accordion" id="topicsAccordion"></div>
+                    </div>
                 `;
 
+                const accordion = document.getElementById('topicsAccordion');
+                
+                // Add each result as an accordion item
                 data.results.forEach((result, index) => {
                     const hasError = result.error !== undefined;
                     const datesCount = hasError ? '0' : result.dates_found;
                     
-                    resultsHtml += `
-                        <div class="accordion-item">
-                            <h2 class="accordion-header">
-                                <button class="accordion-button ${index !== 0 ? 'collapsed' : ''}" type="button" 
-                                        data-bs-toggle="collapse" data-bs-target="#collapse${index}">
-                                    ${result.topic} (${datesCount} dates)
-                                </button>
-                            </h2>
-                            <div id="collapse${index}" class="accordion-collapse collapse ${index === 0 ? 'show' : ''}"
-                                 data-bs-parent="#topicsAccordion">
-                                <div class="accordion-body">
-                                    ${hasError ? 
-                                        `<div class="alert alert-warning">
-                                            ${result.error}
-                                        </div>` :
-                                        `<p><strong>Wikipedia Page:</strong> ${result.wikipedia_page}</p>
-                                         <p><strong>Text Length:</strong> ${result.text_length} characters</p>
-                                         ${formatDates(result.dates)}`
-                                    }
-                                </div>
+                    const accordionItem = document.createElement('div');
+                    accordionItem.className = 'accordion-item';
+                    
+                    accordionItem.innerHTML = `
+                        <h2 class="accordion-header">
+                            <button class="accordion-button ${index !== 0 ? 'collapsed' : ''}" type="button" 
+                                    data-bs-toggle="collapse" data-bs-target="#collapse${index}">
+                                ${result.topic} (${datesCount} dates)
+                            </button>
+                        </h2>
+                        <div id="collapse${index}" class="accordion-collapse collapse ${index === 0 ? 'show' : ''}"
+                             data-bs-parent="#topicsAccordion">
+                            <div class="accordion-body">
+                                ${hasError ? 
+                                    `<div class="alert alert-warning">
+                                        ${result.error}
+                                    </div>` :
+                                    `<p><strong>Wikipedia Page:</strong> ${result.wikipedia_page}</p>
+                                     <p><strong>Text Length:</strong> ${result.text_length} characters</p>
+                                     
+                                     <!-- View Toggle -->
+                                     <div class="mb-3">
+                                         <div class="btn-group" role="group" aria-label="View Toggle">
+                                             <input type="radio" class="btn-check" name="viewToggle${index}" id="summaryView${index}" autocomplete="off" checked>
+                                             <label class="btn btn-outline-primary" for="summaryView${index}">Summarized View</label>
+                                             
+                                             <input type="radio" class="btn-check" name="viewToggle${index}" id="detailView${index}" autocomplete="off">
+                                             <label class="btn btn-outline-primary" for="detailView${index}">Detailed View</label>
+                                         </div>
+                                     </div>
+                                     
+                                     <!-- Summary Statistics -->
+                                     ${formatSummaryStats(result.parsed_data, result.dates_found)}
+                                     
+                                     <!-- Content Views -->
+                                     <div class="view-content">
+                                         <div class="summary-view">
+                                             <h6 class="mt-3">Summarized Timeline:</h6>
+                                             ${formatParsedData(result.parsed_data)}
+                                         </div>
+                                         <div class="detail-view" style="display:none;">
+                                             <h6 class="mt-3">Detailed Timeline:</h6>
+                                             ${formatDates(result.dates)}
+                                         </div>
+                                     </div>`
+                                }
                             </div>
                         </div>
                     `;
+                    
+                    accordion.appendChild(accordionItem);
+                    
+                    // Attach view toggle listeners
+                    if (!hasError) {
+                        const summaryView = document.getElementById(`summaryView${index}`);
+                        const detailView = document.getElementById(`detailView${index}`);
+                        
+                        if (summaryView) {
+                            summaryView.addEventListener('change', function() {
+                                const views = this.closest('.accordion-body').querySelector('.view-content');
+                                views.querySelector('.summary-view').style.display = 'block';
+                                views.querySelector('.detail-view').style.display = 'none';
+                            });
+                        }
+                        
+                        if (detailView) {
+                            detailView.addEventListener('change', function() {
+                                const views = this.closest('.accordion-body').querySelector('.view-content');
+                                views.querySelector('.summary-view').style.display = 'none';
+                                views.querySelector('.detail-view').style.display = 'block';
+                            });
+                        }
+                    }
                 });
-
-                resultsHtml += '</div>';
-                document.getElementById('results').innerHTML = resultsHtml;
             } catch (error) {
                 showError(error.message);
             } finally {
@@ -217,6 +402,5 @@ French Revolution" required></textarea>
             }
         });
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
